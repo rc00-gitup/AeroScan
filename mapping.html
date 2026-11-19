@@ -1,0 +1,466 @@
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: 'Roboto', Arial, sans-serif;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+        background: #f8f9fa;
+        color: #202124;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Workspace Grid (Professional GIS transparent checkerboard) */
+    .workspace-container {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background-color: #f1f3f4;
+        background-image: 
+            linear-gradient(45deg, #e4e7eb 25%, transparent 25%), 
+            linear-gradient(-45deg, #e4e7eb 25%, transparent 25%), 
+            linear-gradient(45deg, transparent 75%, #e4e7eb 75%), 
+            linear-gradient(-45deg, transparent 75%, #e4e7eb 75%);
+        background-size: 24px 24px;
+        background-position: 0 0, 0 12px, 12px -12px, -12px 0px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: grab;
+    }
+    .workspace-container:active { cursor: grabbing; }
+
+    /* Stage without parasitic borders */
+    #stage {
+        transform-origin: center center;
+        transition: transform 0.05s ease-out;
+        position: relative;
+        background: transparent;
+        display: none;
+        filter: drop-shadow(0 10px 30px rgba(0,0,0,0.25));
+        width: max-content;
+        height: max-content;
+    }
+
+    #ortho-canvas {
+        display: block;
+        border-radius: 4px;
+    }
+
+    /* Empty State */
+    .empty-canvas {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        max-width: 420px;
+        padding: 24px;
+        background: #ffffff;
+        border-radius: 8px;
+        border: 1px solid #dadce0;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        z-index: 2;
+    }
+    .empty-icon { font-size: 40px; }
+    .empty-title { font-size: 15px; font-weight: 700; color: #202124; }
+    .empty-desc { font-size: 12px; color: #5f6368; line-height: 1.5; }
+
+    /* Mini Map Info Bar (Top Right) */
+    .map-info-bar {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(8px);
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        padding: 8px 16px;
+        gap: 14px;
+        border: 1px solid #dadce0;
+    }
+    .map-info-item {
+        display: flex;
+        flex-direction: column;
+    }
+    .map-info-lbl {
+        font-size: 9px;
+        font-weight: 700;
+        color: #5f6368;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .map-info-val {
+        font-size: 13px;
+        font-weight: 700;
+        color: #202124;
+        font-family: 'JetBrains Mono', monospace;
+        margin-top: 1px;
+        white-space: nowrap;
+    }
+    .info-sep {
+        width: 1px;
+        height: 22px;
+        background: #dadce0;
+    }
+
+    /* Zoom Controls (Bottom Right) */
+    .zoom-controls {
+        position: absolute;
+        bottom: 24px;
+        right: 24px;
+        background: #ffffff;
+        border: 1px solid #dadce0;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        z-index: 1000;
+    }
+    .btn-zoom {
+        background: transparent;
+        color: #5f6368;
+        border: none;
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: 0.15s;
+    }
+    .btn-zoom:hover { background: #f1f3f4; color: #1a73e8; }
+    .btn-zoom:not(:last-child) { border-bottom: 1px solid #dadce0; }
+
+    /* Bottom Controls Bar */
+    .bottom-card {
+        position: absolute;
+        bottom: 24px;
+        left: 24px;
+        background: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        padding: 8px 16px;
+        gap: 12px;
+        border: 1px solid #dadce0;
+    }
+
+    .nav-link { font-size: 13px; font-weight: 500; color: #5f6368; text-decoration: none; padding: 6px 12px; border-radius: 4px; transition: 0.2s; }
+    .nav-link:hover { background: #f1f3f4; color: #202124; }
+    .nav-link.active { color: #1a73e8; background: #e8f0fe; font-weight: 700; }
+    .divider { width: 1px; height: 26px; background: #dadce0; }
+
+    .btn {
+        border: none; padding: 8px 18px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px;
+    }
+    .btn-save { background: #1a73e8; color: #ffffff; }
+    .btn-save:hover { background: #1557b0; }
+    .btn-save:disabled { background: #dadce0; color: #80868b; cursor: not-allowed; }
+</style>
+
+<!-- Top Right Mini Info Bar -->
+<div class="map-info-bar">
+    <div class="map-info-item">
+        <span class="map-info-lbl">Dimensions</span>
+        <span class="map-info-val" id="info-dim">-- × -- px</span>
+    </div>
+    <div class="info-sep"></div>
+    <div class="map-info-item">
+        <span class="map-info-lbl">Ground Span</span>
+        <span class="map-info-val" id="info-span">-- × -- m</span>
+    </div>
+    <div class="info-sep"></div>
+    <div class="map-info-item">
+        <span class="map-info-lbl">Photos</span>
+        <span class="map-info-val" id="info-photos" style="color: #00c853;">0</span>
+    </div>
+</div>
+
+<!-- Center Workspace -->
+<div class="workspace-container" id="viewport">
+    
+    <div class="empty-canvas" id="empty-state">
+        <div class="empty-icon">🗺️</div>
+        <div class="empty-title">Waiting for Drone Survey Flight</div>
+        <div class="empty-desc">
+            Photos are stitched dynamically into RAM. The rendered HD map will appear cropped strictly to your selected survey polygon.
+        </div>
+    </div>
+
+    <div id="stage">
+        <canvas id="ortho-canvas"></canvas>
+    </div>
+
+    <!-- Floating Zoom Controls -->
+    <div class="zoom-controls">
+        <button class="btn-zoom" onclick="zoomIn()" title="Zoom In">+</button>
+        <button class="btn-zoom" onclick="zoomOut()" title="Zoom Out">−</button>
+        <button class="btn-zoom" onclick="resetZoom()" title="Reset View">⟲</button>
+    </div>
+</div>
+
+<!-- Bottom Controls -->
+<div class="bottom-card">
+    <a href="/" class="nav-link">Planner</a>
+    <a href="/track.html" class="nav-link">Live Track</a>
+    <a href="/mapping.html" class="nav-link active">Map</a>
+
+    <div class="divider"></div>
+
+    <button class="btn btn-save" id="btn-save-map" onclick="saveMapToDisk()" disabled>
+        Save Map
+    </button>
+</div>
+
+<script>
+    const AUTH_HEADER = 'Basic ' + btoa('engineer:ocp2026');
+
+    let currentVersion = -1;
+    let zoomLevel = 1.0;
+    let panX = 0;
+    let panY = 0;
+    let isDragging = false;
+    let startX, startY;
+
+    let missionPolygon = [];
+    let currentClipPathCss = "none";
+    let latestPhotosCount = 0;
+
+    const viewport = document.getElementById('viewport');
+    const stage = document.getElementById('stage');
+    const canvas = document.getElementById('ortho-canvas');
+    const ctx = canvas.getContext('2d');
+    const emptyState = document.getElementById('empty-state');
+    const btnSave = document.getElementById('btn-save-map');
+
+    // Pan and Zoom Interaction
+    viewport.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.zoom-controls') || e.target.closest('.bottom-card') || e.target.closest('.map-info-bar')) return;
+        isDragging = true;
+        startX = e.clientX - panX;
+        startY = e.clientY - panY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        panX = e.clientX - startX;
+        panY = e.clientY - startY;
+        updateTransform();
+    });
+
+    window.addEventListener('mouseup', () => { isDragging = false; });
+
+    viewport.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        zoomLevel = Math.min(Math.max(0.2, zoomLevel * delta), 6.0);
+        updateTransform();
+    }, { passive: false });
+
+    function updateTransform() {
+        stage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+    }
+
+    function zoomIn() { zoomLevel = Math.min(6.0, zoomLevel * 1.25); updateTransform(); }
+    function zoomOut() { zoomLevel = Math.max(0.2, zoomLevel / 1.25); updateTransform(); }
+    function resetZoom() { zoomLevel = 1.0; panX = 0; panY = 0; updateTransform(); }
+
+    // ==============================================================
+    // MAP INFO UPDATE (DIMENSIONS & GROUND SPAN)
+    // ==============================================================
+    function updateMapHeaderInfo(wPx, hPx) {
+        document.getElementById('info-dim').innerText = `${wPx} × ${hPx} px`;
+        document.getElementById('info-photos').innerText = `${latestPhotosCount}`;
+
+        if (missionPolygon && missionPolygon.length >= 3) {
+            const lats = missionPolygon.map(pt => pt[0]);
+            const lons = missionPolygon.map(pt => pt[1]);
+            const midLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+            const dLatM = (Math.max(...lats) - Math.min(...lats)) * 111320;
+            const dLonM = (Math.max(...lons) - Math.min(...lons)) * (111320 * Math.cos(midLat * Math.PI / 180));
+            document.getElementById('info-span').innerText = `${Math.round(dLonM)} × ${Math.round(dLatM)} m`;
+        }
+    }
+
+    // ==============================================================
+    // 1. POLYGON RETRIEVAL & STRICT VECTOR CLIPPING
+    // ==============================================================
+    function loadMissionPolygon() {
+        fetch('/api/get-active-mission', { headers: { 'Authorization': AUTH_HEADER } })
+        .then(res => res.json())
+        .then(mission => {
+            if (mission && mission.raw_polygon && mission.raw_polygon.length >= 3) {
+                missionPolygon = mission.raw_polygon;
+                buildPolygonClipPath();
+            }
+        })
+        .catch(() => {});
+    }
+
+    function buildPolygonClipPath() {
+        if (!missionPolygon || missionPolygon.length < 3) return;
+
+        const lats = missionPolygon.map(pt => pt[0]);
+        const lons = missionPolygon.map(pt => pt[1]);
+
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+        const minLon = Math.min(...lons);
+        const maxLon = Math.max(...lons);
+
+        const padX = (maxLon - minLon) * 0.06;
+        const padY = (maxLat - minLat) * 0.06;
+
+        const bMinLon = minLon - padX;
+        const bMaxLon = maxLon + padX;
+        const bMinLat = minLat - padY;
+        const bMaxLat = maxLat + padY;
+
+        const polygonCssPoints = missionPolygon.map(pt => {
+            const xPct = ((pt[1] - bMinLon) / (bMaxLon - bMinLon)) * 100;
+            const yPct = ((bMaxLat - pt[0]) / (bMaxLat - bMinLat)) * 100;
+            return `${Math.max(0, Math.min(100, xPct)).toFixed(2)}% ${Math.max(0, Math.min(100, yPct)).toFixed(2)}%`;
+        });
+
+        currentClipPathCss = `polygon(${polygonCssPoints.join(', ')})`;
+        if (canvas) canvas.style.clipPath = currentClipPathCss;
+    }
+    
+    // ==============================================================
+    // 2. RENDERING WITHOUT BLACK BORDERS (STRICT 0,0,0)
+    // ==============================================================
+    
+    function renderTransparentOrthomosaic(img) {
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imgData.data;
+
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i] <= 10 && d[i + 1] <= 10 && d[i + 2] <= 10) {
+                d[i + 3] = 0;
+            }
+        }
+
+        ctx.putImageData(imgData, 0, 0);
+
+        if (currentClipPathCss !== "none") {
+            canvas.style.clipPath = currentClipPathCss;
+        }
+
+        emptyState.style.display = 'none';
+        stage.style.display = 'block';
+        updateMapHeaderInfo(canvas.width, canvas.height);
+    }
+    
+    // ==============================================================
+    // 3. PROGRESSIVE IN-RAM SYNCHRONIZATION
+    // ==============================================================
+    function checkMappingUpdates() {
+        fetch('/api/mapping/status', { headers: { 'Authorization': AUTH_HEADER } })
+        .then(res => res.json())
+        .then(data => {
+            if (!data) return;
+
+            latestPhotosCount = data.photos_count || 0;
+            document.getElementById('info-photos').innerText = `${latestPhotosCount}`;
+
+            if (latestPhotosCount > 0 && btnSave) {
+                btnSave.disabled = false;
+            }
+
+            if (data.version !== undefined && data.version !== currentVersion && latestPhotosCount > 0) {
+                currentVersion = data.version;
+
+                const newImageUrl = `/api/mapping/live-ortho?t=${Date.now()}`;
+                const tempImg = new Image();
+                tempImg.src = newImageUrl;
+                tempImg.onload = () => {
+                    renderTransparentOrthomosaic(tempImg);
+                };
+            }
+        })
+        .catch(() => {});
+    }
+
+    // ==============================================================
+    // 4. DIRECT HD EXPORT BASED ON EXACT POLYGON AREA
+    // ==============================================================
+    function saveMapToDisk() {
+        if (!canvas || canvas.width === 0) return;
+
+        btnSave.disabled = true;
+        btnSave.innerText = "Exporting...";
+
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = canvas.width;
+        exportCanvas.height = canvas.height;
+        const expCtx = exportCanvas.getContext('2d');
+
+        if (missionPolygon && missionPolygon.length >= 3) {
+            const lats = missionPolygon.map(pt => pt[0]);
+            const lons = missionPolygon.map(pt => pt[1]);
+
+            const minLat = Math.min(...lats);
+            const maxLat = Math.max(...lats);
+            const minLon = Math.min(...lons);
+            const maxLon = Math.max(...lons);
+
+            const padX = (maxLon - minLon) * 0.06;
+            const padY = (maxLat - minLat) * 0.06;
+
+            const bMinLon = minLon - padX;
+            const bMaxLon = maxLon + padX;
+            const bMinLat = minLat - padY;
+            const bMaxLat = maxLat + padY;
+
+            expCtx.beginPath();
+            missionPolygon.forEach((pt, idx) => {
+                const x = ((pt[1] - bMinLon) / (bMaxLon - bMinLon)) * canvas.width;
+                const y = ((bMaxLat - pt[0]) / (bMaxLat - bMinLat)) * canvas.height;
+                if (idx === 0) expCtx.moveTo(x, y);
+                else expCtx.lineTo(x, y);
+            });
+            expCtx.closePath();
+            expCtx.clip();
+        }
+
+        expCtx.drawImage(canvas, 0, 0);
+
+        exportCanvas.toBlob((blob) => {
+            btnSave.disabled = false;
+            btnSave.innerText = "Save Map";
+            if (!blob) return;
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `uav_hd_map_${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 'image/png');
+    }    
+
+    loadMissionPolygon();
+    setInterval(checkMappingUpdates, 500);
+    checkMappingUpdates();
+</script>

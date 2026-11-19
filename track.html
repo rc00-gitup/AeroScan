@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAV Industrial Telemetry & Live Tracking</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; font-family: 'Roboto', Arial, sans-serif; height: 100vh; width: 100vw; overflow: hidden; background: #f8f9fa; }
+        #map { width: 100%; height: 100%; position: absolute; z-index: 1; }
+
+        /* Weather Selector Top-Right (Compact) */
+        .weather-control-card {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            width: 290px;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(8px);
+            border-radius: 6px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid #dadce0;
+        }
+
+        .weather-header {
+            background: #f1f3f4;
+            padding: 6px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            border-bottom: 1px solid #dadce0;
+        }
+        .weather-title { font-size: 10px; font-weight: 700; color: #5f6368; text-transform: uppercase; white-space: nowrap; letter-spacing: 0.4px; }
+        .weather-badge { font-size: 9px; font-weight: 700; color: #1a73e8; font-family: 'JetBrains Mono', monospace; text-align: right; }
+
+        .weather-stats {
+            display: flex;
+            padding: 6px 12px;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .weather-stat-item { display: flex; flex-direction: column; }
+        .weather-stat-lbl { font-size: 8px; color: #5f6368; font-weight: 700; text-transform: uppercase; }
+        .weather-stat-val { font-size: 12px; font-weight: 700; color: #202124; font-family: 'JetBrains Mono', monospace; }
+
+        .weather-modes-bar {
+            display: flex;
+            background: #ffffff;
+            border-top: 1px solid #dadce0;
+            padding: 3px;
+            gap: 3px;
+        }
+        .w-btn {
+            flex: 1;
+            padding: 5px 6px;
+            border: 1px solid #dadce0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            color: #3c4043;
+            white-space: nowrap;
+        }
+        .w-btn:hover { background: #e8f0fe; color: #1a73e8; border-color: #1a73e8; }
+        .w-btn.active { background: #1a73e8; color: #ffffff; border-color: #1a73e8; }
+        .w-btn.alert.active { background: #d93025; border-color: #d93025; }
+
+        .color-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .dot-live { background: #1a73e8; box-shadow: 0 0 3px #1a73e8; }
+        .dot-calm { background: #34a853; box-shadow: 0 0 3px #34a853; }
+        .dot-windy { background: #00bcd4; box-shadow: 0 0 3px #00bcd4; }
+        .dot-heat { background: #f29900; box-shadow: 0 0 3px #f29900; }
+        .dot-storm { background: #d93025; box-shadow: 0 0 3px #d93025; }
+
+        /* Compact Live Camera Widget */
+        .camera-card {
+            position: absolute;
+            top: 132px;
+            right: 14px;
+            width: 250px;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(8px);
+            border-radius: 6px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+            z-index: 1000;
+            overflow: hidden;
+            border: 1px solid #dadce0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .camera-header {
+            background: #202124;
+            color: #ffffff;
+            padding: 6px 10px;
+            font-size: 10px;
+            font-weight: 700;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            letter-spacing: 0.4px;
+        }
+
+        .camera-view {
+            width: 100%;
+            height: 145px;
+            background: #111215;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .camera-view img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+
+        .camera-empty {
+            color: #9aa0a6;
+            font-size: 10px;
+            font-weight: 500;
+            text-align: center;
+            padding: 10px;
+            line-height: 1.3;
+        }
+
+        .camera-meta {
+            padding: 5px 10px;
+            background: #ffffff;
+            font-size: 9px;
+            color: #5f6368;
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            justify-content: space-between;
+            border-top: 1px solid #dadce0;
+        }
+
+        /* Compact Avionics HUD (2 COLUMNS) */
+        .floating-panel {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            width: 290px;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(8px);
+            border-radius: 6px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+            z-index: 1000;
+            overflow: hidden;
+            border: 1px solid #dadce0;
+        }
+
+        .panel-header {
+            padding: 8px 12px;
+            background: #1a73e8;
+            color: #ffffff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .panel-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            white-space: nowrap;
+        }
+
+        .panel-badges {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .badge-mode {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #ffffff;
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+
+        .badge-status {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            color: #e8f0fe;
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+
+        /* 2 COLUMNS GRID */
+        .telemetry-grid {
+            padding: 10px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+        }
+        .telemetry-item {
+            background: #f8f9fa;
+            padding: 6px 8px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #e8eaed;
+        }
+        .telemetry-label { font-size: 8px; color: #5f6368; font-weight: 700; text-transform: uppercase; }
+        .telemetry-value { font-size: 12px; font-weight: 700; color: #202124; font-family: 'JetBrains Mono', monospace; margin-top: 1px; }
+
+        .status-badge {
+            grid-column: span 2;
+            padding: 5px 8px;
+            background: #e6f4ea;
+            color: #137333;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-align: center;
+            border: 1px solid #ceead6;
+        }
+
+        /* Bottom Controls Bar (Compact) */
+        .bottom-card {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            background: #ffffff;
+            border-radius: 6px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            padding: 6px 12px;
+            gap: 8px;
+            border: 1px solid #dadce0;
+        }
+        .nav-link { font-size: 11px; font-weight: 600; color: #5f6368; text-decoration: none; padding: 5px 10px; border-radius: 4px; transition: 0.15s; }
+        .nav-link:hover { background: #f1f3f4; color: #202124; }
+        .nav-link.active { color: #1a73e8; background: #e8f0fe; font-weight: 700; }
+        .divider { width: 1px; height: 20px; background: #dadce0; }
+
+        .btn-center {
+            padding: 6px 12px; background: #1a73e8; color: white; border: none;
+            border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: 0.15s;
+        }
+        .btn-center:hover { background: #1557b0; }
+
+        .btn-abort {
+            padding: 6px 12px; background: #d93025; color: white; border: none;
+            border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.15s;
+        }
+        .btn-abort:hover { background: #b31412; }
+
+        /* Drone & Station Markers */
+        .drone-svg { transition: transform 0.08s linear; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)); }
+        .station-marker {
+            background: #34a853; color: white; font-weight: bold; font-size: 11px; text-align: center;
+            line-height: 22px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 6px rgba(0,0,0,0.4);
+        }
+
+        .photo-dot {
+            width: 10px;
+            height: 10px;
+            background: #00e676;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 6px rgba(0, 230, 118, 0.8);
+            transition: transform 0.2s ease-out;
+        }
+        .photo-dot:hover {
+            transform: scale(1.5);
+            background: #00c853;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Atmospheric Environment HUD -->
+    <div class="weather-control-card">
+        <div class="weather-header">
+            <span class="weather-title">Atmospheric Environment</span>
+            <span class="weather-badge" id="w-mode-label">LIVE SATELLITE</span>
+        </div>
+
+        <div class="weather-stats">
+            <div class="weather-stat-item">
+                <span class="weather-stat-lbl">Wind Speed</span>
+                <span class="weather-stat-val" id="w-wind">-- m/s</span>
+            </div>
+            <div class="weather-stat-item">
+                <span class="weather-stat-lbl">Direction</span>
+                <span class="weather-stat-val" id="w-dir">--°</span>
+            </div>
+            <div class="weather-stat-item">
+                <span class="weather-stat-lbl">Temperature</span>
+                <span class="weather-stat-val" id="w-temp">--°C</span>
+            </div>
+        </div>
+
+        <div class="weather-modes-bar">
+            <button class="w-btn active" id="btn-live" onclick="setWeatherProfile('live')">
+                <span class="color-dot dot-live"></span>Live
+            </button>
+            <button class="w-btn" id="btn-calm" onclick="setWeatherProfile('calm')">
+                <span class="color-dot dot-calm"></span>Calm
+            </button>
+            <button class="w-btn" id="btn-windy" onclick="setWeatherProfile('windy')">
+                <span class="color-dot dot-windy"></span>Coastal
+            </button>
+            <button class="w-btn" id="btn-heatwave" onclick="setWeatherProfile('heatwave')">
+                <span class="color-dot dot-heat"></span>Heat
+            </button>
+            <button class="w-btn alert" id="btn-storm" onclick="setWeatherProfile('storm')">
+                <span class="color-dot dot-storm"></span>Storm
+            </button>
+        </div>
+    </div>
+
+    <!-- Live Camera Feed Widget -->
+    <div class="camera-card">
+        <div class="camera-header">
+            <span>LIVE CAMERA</span>
+            <span id="cam-status" style="color: #00e676; font-size: 9px;">STANDBY</span>
+        </div>
+        <div class="camera-view">
+            <span class="camera-empty" id="empty-feed-text">Waiting for Survey Trigger...</span>
+            <img id="camera-feed-img" src="" alt="Live Drone Camera Feed">
+        </div>
+        <div class="camera-meta">
+            <span id="cam-frame-id">PHOTO #--</span>
+            <span id="cam-frame-gps">LAT -- | LON --</span>
+        </div>
+    </div>
+
+    <!-- Avionics Telemetry HUD (2 COLUMNS - COMPACT) -->
+    <div class="floating-panel">
+        <div class="panel-header">
+            <span class="panel-title">UAV Telemetry</span>
+            <div class="panel-badges">
+                <span id="nav-mode-badge" class="badge-mode">ONE-WAY</span>
+                <span id="sat-status" class="badge-status">PLAN v1</span>
+            </div>
+        </div>
+
+        <div class="telemetry-grid">
+            <div class="status-badge" id="flight-mode">TAKEOFF PRE-FLIGHT</div>
+
+            <div class="telemetry-item">
+                <span class="telemetry-label">Altitude</span>
+                <span class="telemetry-value" id="alt-val">0.0 m</span>
+            </div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Ground Speed</span>
+                <span class="telemetry-value" id="spd-val">0.0 m/s</span>
+            </div>
+
+            <div class="telemetry-item">
+                <span class="telemetry-label">Battery SOC</span>
+                <span class="telemetry-value" id="bat-val" style="color: #1e8e3e;">100%</span>
+            </div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">LiPo Voltage</span>
+                <span class="telemetry-value" id="volt-val">25.2 V</span>
+            </div>
+
+            <div class="telemetry-item">
+                <span class="telemetry-label">Roll</span>
+                <span class="telemetry-value" id="roll-val">0.0°</span>
+            </div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Pitch</span>
+                <span class="telemetry-value" id="pitch-val">0.0°</span>
+            </div>
+
+            <div class="telemetry-item">
+                <span class="telemetry-label">Heading</span>
+                <span class="telemetry-value" id="yaw-val">0.0°</span>
+            </div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Current Draw</span>
+                <span class="telemetry-value" id="curr-val">0.0 A</span>
+            </div>
+
+            <div class="telemetry-item">
+                <span class="telemetry-label">Photos Captured</span>
+                <span class="telemetry-value" id="photos-val" style="color: #00c853;">0</span>
+            </div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Cross Drift</span>
+                <span class="telemetry-value" id="xtrack-val">0.00 m</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Controls -->
+    <div class="bottom-card">
+        <a href="/" class="nav-link">Planner</a>
+        <a href="/track.html" class="nav-link active">Live Track</a>
+        <a href="/mapping.html" class="nav-link">Map</a>
+
+        <div class="divider"></div>
+
+        <button class="btn-center" onclick="centerOnDrone()">Center Drone</button>
+        <button class="btn-abort" onclick="abortMission()">EMERGENCY STOP</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        const AUTH_HEADER = 'Basic ' + btoa('engineer:ocp2026');
+
+        const savedStation = localStorage.getItem('uav_dock_station');
+        const defaultDock = savedStation ? JSON.parse(savedStation) : { lat: 32.2515, lng: -9.2630 };
+
+        const map = L.map('map', { maxZoom: 21, zoomControl: false }).setView([defaultDock.lat, defaultDock.lng], 17);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { 
+            maxZoom: 21, subdomains: ['mt0','mt1','mt2','mt3'] 
+        }).addTo(map);
+
+        const stationIcon = L.divIcon({ className: 'station-marker', html: '⚡', iconSize: [22, 22], iconAnchor: [11, 11] });
+        let dockMarker = L.marker([defaultDock.lat, defaultDock.lng], { icon: stationIcon }).addTo(map)
+            .bindPopup("<b>Docking Station</b>");
+
+        let flightPathLayer = L.polyline([], { color: '#1a73e8', weight: 2.5, dashArray: '5, 5' }).addTo(map);
+        let flownBreadcrumbsLayer = L.polyline([], { color: '#34a853', weight: 2.5, opacity: 0.85 }).addTo(map);
+
+        let photoMarkersLayer = L.layerGroup().addTo(map);
+        let loadedPhotoIds = new Set();
+
+        let currentPlanVersion = -1;
+        let lastDronePos = [defaultDock.lat, defaultDock.lng];
+        let hasAutoCentered = false;
+
+        const droneIcon = L.divIcon({
+            className: 'drone-container',
+            html: `
+                <svg id="drone-graphic" class="drone-svg" width="30" height="30" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="3" fill="#ea4335" />
+                    <line x1="5" y1="5" x2="19" y2="19" stroke="#ffffff" stroke-width="2" />
+                    <line x1="5" y1="19" x2="19" y2="5" stroke="#ffffff" stroke-width="2" />
+                    <circle cx="5" cy="5" r="2.5" fill="#1a73e8" />
+                    <circle cx="19" cy="5" r="2.5" fill="#1a73e8" />
+                    <circle cx="5" cy="19" r="2.5" fill="#202124" />
+                    <circle cx="19" cy="19" r="2.5" fill="#202124" />
+                    <polygon points="12,3 10,7 14,7" fill="#ea4335" />
+                </svg>
+            `,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        let droneMarker = L.marker([defaultDock.lat, defaultDock.lng], { icon: droneIcon }).addTo(map);
+
+        function centerOnDrone() {
+            if (lastDronePos) {
+                map.setView(lastDronePos, 18, { animate: true });
+            }
+        }
+
+        function abortMission() {
+            if (confirm("Confirm immediate EMERGENCY STOP and return to Dock?")) {
+                fetch('/api/abort-mission', {
+                    method: 'POST',
+                    headers: { 'Authorization': AUTH_HEADER }
+                })
+                .then(res => res.json())
+                .then(() => {
+                    const badge = document.getElementById('flight-mode');
+                    if (badge) {
+                        badge.innerText = "ABORTING TO DOCK";
+                        badge.style.background = '#fce8e6';
+                        badge.style.color = '#c5221f';
+                    }
+                })
+                .catch(err => console.error("Emergency abort error :", err));
+            }
+        }
+
+        function loadMissionPath() {
+            fetch('/api/get-active-mission', { headers: { 'Authorization': AUTH_HEADER } })
+            .then(res => {
+                if (!res.ok) throw new Error("Access denied or no mission");
+                return res.json();
+            })
+            .then(mission => {
+                if (!mission || !mission.dock_station) return;
+
+                const dockLat = mission.dock_station.lat;
+                const dockLon = mission.dock_station.lon || mission.dock_station.lng;
+
+                dockMarker.setLatLng([dockLat, dockLon]);
+                lastDronePos = [dockLat, dockLon];
+
+                if (mission.waypoints && mission.waypoints.length > 0) {
+                    const path = mission.waypoints.map(wp => [wp.lat, wp.lon]);
+                    flightPathLayer.setLatLngs(path);
+
+                    const bounds = flightPathLayer.getBounds();
+                    bounds.extend([dockLat, dockLon]);
+                    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18 });
+                    hasAutoCentered = true;
+                }
+            })
+            .catch(err => console.log("Waiting for active mission...", err));
+        }
+
+        loadMissionPath();
+
+        function setWeatherProfile(mode) {
+            document.querySelectorAll('.w-btn').forEach(b => b.classList.remove('active'));
+            const activeBtn = document.getElementById(`btn-${mode}`);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            document.getElementById('sat-status').innerText = "ADAPTING";
+
+            fetch('/api/set-weather-mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': AUTH_HEADER },
+                body: JSON.stringify({ mode: mode })
+            })
+            .then(res => res.json())
+            .then(data => {
+                const w = data.weather;
+                if (w) {
+                    const cleanLabel = (w.label || mode).replace(/\s*\([^)]*\)/g, '').trim().toUpperCase();
+                    document.getElementById('w-mode-label').innerText = cleanLabel;
+                    document.getElementById('w-wind').innerText = `${w.wind_speed_ms} m/s`;
+                    document.getElementById('w-dir').innerText = `${w.wind_direction_deg}°`;
+                    document.getElementById('w-temp').innerText = `${w.temperature_c}°C`;
+                }
+            })
+            .catch(err => console.error("Weather error :", err));
+        }
+
+        // Real-Time Drone Telemetry (10 Hz)
+        setInterval(() => {
+            fetch('/api/drone-telemetry', { headers: { 'Authorization': AUTH_HEADER } })
+            .then(res => res.json())
+            .then(d => {
+                if (!d || !d.lat) return;
+
+                const curPos = [d.lat, d.lon];
+                lastDronePos = curPos;
+
+                droneMarker.setLatLng(curPos);
+
+                const svg = document.getElementById('drone-graphic');
+                if (svg) svg.style.transform = `rotate(${d.yaw}deg)`;
+
+                if (!hasAutoCentered && d.alt > 0.5) {
+                    map.setView(curPos, 18);
+                    hasAutoCentered = true;
+                }
+
+                if (d.flown_history && d.flown_history.length > 0) {
+                    flownBreadcrumbsLayer.setLatLngs(d.flown_history);
+                }
+
+                if (d.plan_version !== undefined && d.plan_version !== currentPlanVersion) {
+                    currentPlanVersion = d.plan_version;
+                    document.getElementById('sat-status').innerText = `PLAN v${currentPlanVersion}`;
+
+                    if (d.remaining_waypoints && d.remaining_waypoints.length > 0) {
+                        const newPath = d.remaining_waypoints.map(wp => [wp.lat, wp.lon]);
+                        flightPathLayer.setLatLngs(newPath);
+                    }
+                } else if (d.remaining_waypoints && d.remaining_waypoints.length > 0) {
+                    flightPathLayer.setLatLngs(d.remaining_waypoints.map(wp => [wp.lat, wp.lon]));
+                }
+
+                const modeBadge = document.getElementById('nav-mode-badge');
+                if (modeBadge && d.nav_mode) {
+                    if (d.nav_mode === 'one_way') modeBadge.innerText = "ONE-WAY";
+                    else if (d.nav_mode === 'round_trip') modeBadge.innerText = "ROUND-TRIP";
+                    else if (d.nav_mode === 'infinite') modeBadge.innerText = "INFINITE";
+                }
+
+                document.getElementById('w-wind').innerText = `${d.wind_speed.toFixed(1)} m/s`;
+                document.getElementById('w-dir').innerText = `${Math.round(d.wind_dir)}°`;
+                document.getElementById('w-temp').innerText = `${d.temp_c.toFixed(1)}°C`;
+                if (d.weather_label) {
+                    const cleanLiveLabel = d.weather_label.replace(/\s*\([^)]*\)/g, '').trim().toUpperCase();
+                    document.getElementById('w-mode-label').innerText = cleanLiveLabel;
+                }
+
+                const badge = document.getElementById('flight-mode');
+                if (badge && d.status) {
+                    badge.innerText = d.status.replace(/[:()]/g, '');
+                    if (d.status.includes('ABORT') || d.status.includes('RTL') || d.status.includes('LANDING')) {
+                        badge.style.background = '#fce8e6';
+                        badge.style.color = '#c5221f';
+                    } else if (d.status.includes('HOVER') || d.status.includes('REPLANNING')) {
+                        badge.style.background = '#fef7e0';
+                        badge.style.color = '#b06000';
+                    } else if (d.status.includes('CHARGING')) {
+                        badge.style.background = '#e8f0fe';
+                        badge.style.color = '#1a73e8';
+                    } else {
+                        badge.style.background = '#e6f4ea';
+                        badge.style.color = '#137333';
+                    }
+                }
+
+                document.getElementById('alt-val').innerText = `${d.alt.toFixed(1)} m`;
+                document.getElementById('spd-val').innerText = `${d.speed.toFixed(1)} m/s`;
+                document.getElementById('bat-val').innerText = `${d.battery}%`;
+                document.getElementById('roll-val').innerText = `${d.roll.toFixed(1)}°`;
+                document.getElementById('pitch-val').innerText = `${d.pitch.toFixed(1)}°`;
+                document.getElementById('yaw-val').innerText = `${d.yaw.toFixed(0)}°`;
+                document.getElementById('xtrack-val').innerText = `${Math.abs(d.cross_track_error).toFixed(2)} m`;
+
+                document.getElementById('volt-val').innerText = `${d.voltage.toFixed(1)} V`;
+                document.getElementById('curr-val').innerText = `${d.current_amps.toFixed(1)} A`;
+
+                document.getElementById('bat-val').style.color = d.battery <= 30 ? '#d93025' : '#1e8e3e';
+            })
+            .catch(() => {});
+        }, 100);
+
+        // Camera Feed & Survey Photo Dots (2 Hz)
+        setInterval(() => {
+            fetch('/api/mapping/status', { headers: { 'Authorization': AUTH_HEADER } })
+            .then(res => res.json())
+            .then(data => {
+                if (!data) return;
+
+                const count = data.photos_count || 0;
+                document.getElementById('photos-val').innerText = count;
+
+                if (data.latest_capture) {
+                    const c = data.latest_capture;
+                    const img = document.getElementById('camera-feed-img');
+                    
+                    img.src = `/api/mapping/live-camera.jpg?t=${c.timestamp}`;
+                    img.onload = () => {
+                        document.getElementById('empty-feed-text').style.display = 'none';
+                        img.style.display = 'block';
+                    };
+
+                    document.getElementById('cam-frame-id').innerText = `PHOTO #${String(c.id).padStart(3, '0')}`;
+                    document.getElementById('cam-frame-gps').innerText = `LAT ${c.lat.toFixed(4)} | LON ${c.lon.toFixed(4)}`;
+                    document.getElementById('cam-status').innerText = "RECORDING HD";
+                }
+
+                if (data.captures && data.captures.length > 0) {
+                    data.captures.forEach(c => {
+                        if (!loadedPhotoIds.has(c.id)) {
+                            loadedPhotoIds.add(c.id);
+
+                            const greenDot = L.divIcon({
+                                className: 'photo-dot',
+                                iconSize: [10, 10],
+                                iconAnchor: [5, 5]
+                            });
+
+                            L.marker([c.lat, c.lon], { icon: greenDot })
+                                .bindPopup(`
+                                    <div style="font-family: Roboto, sans-serif; font-size: 11px;">
+                                        <b style="color: #1a73e8;">HD Photo #${c.id}</b><br>
+                                        <b>Altitude:</b> ${c.alt} m<br>
+                                        <b>Heading:</b> ${c.yaw}°<br>
+                                        <b>Coordinates:</b> ${c.lat.toFixed(5)}, ${c.lon.toFixed(5)}
+                                    </div>
+                                `)
+                                .addTo(photoMarkersLayer);
+                        }
+                    });
+                }
+            })
+            .catch(() => {});
+        }, 500);
+    </script>
+</body>
+</html>

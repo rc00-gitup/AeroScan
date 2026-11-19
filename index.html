@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAV Industrial Planner</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.css" />
+    <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; font-family: 'Roboto', Arial, sans-serif; height: 100vh; width: 100vw; overflow: hidden; }
+        #map { width: 100%; height: 100%; position: absolute; z-index: 1; }
+
+        /* Weather card centered at top */
+        .weather-card {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(6px);
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 8px 16px;
+            border: 1px solid #e0e0e0;
+            white-space: nowrap;
+        }
+
+        .weather-item { display: flex; flex-direction: column; }
+        .weather-label { font-size: 10px; color: #5f6368; font-weight: 700; text-transform: uppercase; }
+        .weather-val { font-size: 13px; font-weight: 700; color: #202124; font-family: monospace; }
+
+        .bottom-card {
+            position: absolute;
+            bottom: 24px;
+            left: 24px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            gap: 12px;
+            border: 1px solid #dadce0;
+        }
+
+        .nav-link { font-size: 13px; font-weight: 500; color: #5f6368; text-decoration: none; padding: 6px 12px; border-radius: 4px; transition: 0.2s; }
+        .nav-link:hover { background: #f1f3f4; color: #202124; }
+        .nav-link.active { color: #1a73e8; background: #e8f0fe; font-weight: 700; }
+        .divider { width: 1px; height: 28px; background: #dadce0; }
+
+        .dropdown-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .dropdown-label {
+            font-size: 10px;
+            color: #5f6368;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .mode-dropdown {
+            appearance: none;
+            -webkit-appearance: none;
+            background-color: #ffffff;
+            color: #202124;
+            border: 1px solid #dadce0;
+            padding: 7px 32px 7px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            outline: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235f6368'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 16px;
+            transition: all 0.2s;
+        }
+        .mode-dropdown:hover {
+            border-color: #1a73e8;
+            background-color: #f8f9fa;
+        }
+
+        .btn { border: none; padding: 8px 14px; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+        .btn-base { background: #34a853; color: white; }
+        .btn-base.active { background: #f2994a; }
+        .btn-start { background: #1a73e8; color: #ffffff; font-weight: 600; }
+        .btn-start:hover { background: #1557b0; }
+
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #dadce0; }
+        .status-dot.ready { background: #1e8e3e; }
+
+        .station-marker {
+            background: #34a853; color: white; font-weight: bold; font-size: 12px;
+            text-align: center; line-height: 24px; width: 26px; height: 26px;
+            border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.5);
+        }
+
+        .drone-svg { transition: transform 0.08s linear; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5)); }
+    </style>
+</head>
+<body>
+
+    <div class="weather-card">
+        <div class="weather-item">
+            <span class="weather-label">Live Wind</span>
+            <span class="weather-val" id="w-wind">-- m/s</span>
+        </div>
+        <div class="weather-item">
+            <span class="weather-label">Direction</span>
+            <span class="weather-val" id="w-dir">--°</span>
+        </div>
+        <div class="weather-item">
+            <span class="weather-label">Air Temp</span>
+            <span class="weather-val" id="w-temp">--°C</span>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="bottom-card">
+        <a href="/" class="nav-link active">Planner</a>
+        <a href="/track.html" class="nav-link">Tracker</a>
+        <a href="/mapping.html" class="nav-link">Map</a>
+
+        <div class="divider"></div>
+
+        <button class="btn btn-base" id="btn-set-base" onclick="toggleSetBaseMode()">⚡ Set Dock Base</button>
+
+        <div class="divider"></div>
+
+        <div class="dropdown-container">
+            <span class="dropdown-label">Mission Mode</span>
+            <select id="mission-mode" class="mode-dropdown">
+                <option value="one_way">One-Way</option>
+                <option value="round_trip">Round-Trip</option>
+                <option value="infinite">Auto-Dock</option>
+            </select>
+        </div>
+
+        <div class="status-dot" id="ready-indicator" title="No survey area defined"></div>
+
+        <button class="btn btn-start" onclick="submitMission()">Start Scan</button>
+    </div>
+
+    <script>
+        const AUTH_HEADER = 'Basic ' + btoa('engineer:ocp2026');
+
+        let selectedPolygon = null;
+        let lastPolygonLayer = null;
+        let settingBaseMode = false;
+
+        const savedStation = localStorage.getItem('uav_dock_station');
+        let chargingStation = savedStation ? JSON.parse(savedStation) : { lat: 32.2515, lng: -9.2630 };
+
+        const map = L.map('map', { maxZoom: 21, zoomControl: false }).setView([chargingStation.lat, chargingStation.lng], 16);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { 
+            maxZoom: 21, subdomains: ['mt0','mt1','mt2','mt3'] 
+        }).addTo(map);
+
+        L.Control.geocoder({ defaultMarkGeocode: false, position: 'topright' })
+            .on('markgeocode', e => map.fitBounds(e.geocode.bbox)).addTo(map);
+
+        const stationIcon = L.divIcon({ className: 'station-marker', html: '⚡', iconSize: [26, 26], iconAnchor: [13, 13] });
+        let baseMarker = L.marker([chargingStation.lat, chargingStation.lng], { icon: stationIcon }).addTo(map)
+            .bindPopup("<b>Docking Station (Home)</b>");
+
+        const droneIcon = L.divIcon({
+            className: 'drone-container',
+            html: `
+                <svg id="drone-graphic" class="drone-svg" width="30" height="30" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="3" fill="#ea4335" />
+                    <line x1="5" y1="5" x2="19" y2="19" stroke="#ffffff" stroke-width="2" />
+                    <line x1="5" y1="19" x2="19" y2="5" stroke="#ffffff" stroke-width="2" />
+                    <circle cx="5" cy="5" r="2.5" fill="#1a73e8" />
+                    <circle cx="19" cy="5" r="2.5" fill="#1a73e8" />
+                    <circle cx="5" cy="19" r="2.5" fill="#202124" />
+                    <circle cx="19" cy="19" r="2.5" fill="#202124" />
+                    <polygon points="12,3 10,7 14,7" fill="#ea4335" />
+                </svg>
+            `,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+        let liveDroneMarker = L.marker([chargingStation.lat, chargingStation.lng], { icon: droneIcon }).addTo(map);
+
+        map.pm.setPathOptions({ color: '#1a73e8', fillColor: '#1a73e8', fillOpacity: 0.15, weight: 2 });
+        map.pm.addControls({ 
+            position: 'topleft', drawPolygon: true, drawRectangle: true, drawCircle: false, 
+            drawPolyline: false, drawMarker: false, drawCircleMarker: false, drawText: false, cutPolygon: false 
+        });
+
+        map.on('pm:create', (e) => {
+            if (lastPolygonLayer) {
+                map.removeLayer(lastPolygonLayer);
+            }
+            lastPolygonLayer = e.layer;
+
+            let latlngs = e.layer.getLatLngs();
+            if (Array.isArray(latlngs[0])) latlngs = latlngs[0];
+            selectedPolygon = latlngs.map(pt => ({ lat: parseFloat(pt.lat.toFixed(6)), lng: parseFloat(pt.lng.toFixed(6)) }));
+            
+            document.getElementById('ready-indicator').classList.add('ready');
+        });
+
+        function toggleSetBaseMode() {
+            settingBaseMode = !settingBaseMode;
+            const btn = document.getElementById('btn-set-base');
+            btn.innerText = settingBaseMode ? "Click on Map..." : "⚡ Set Dock Base";
+            btn.classList.toggle('active', settingBaseMode);
+        }
+
+        map.on('click', (e) => {
+            if (settingBaseMode) {
+                chargingStation = { lat: parseFloat(e.latlng.lat.toFixed(6)), lng: parseFloat(e.latlng.lng.toFixed(6)) };
+                localStorage.setItem('uav_dock_station', JSON.stringify(chargingStation));
+                
+                baseMarker.setLatLng([chargingStation.lat, chargingStation.lng]);
+                baseMarker.bindPopup("<b>Docking Station (Saved)</b><br>Lat: " + chargingStation.lat + "<br>Lng: " + chargingStation.lng).openPopup();
+                toggleSetBaseMode();
+                refreshWeatherForLocation(chargingStation.lat, chargingStation.lng);
+            }
+        });
+
+        function refreshWeatherForLocation(lat, lng) {
+            fetch(`/api/live-weather?lat=${lat}&lon=${lng}`, { headers: { 'Authorization': AUTH_HEADER } })
+            .then(res => res.json())
+            .then(w => {
+                document.getElementById('w-wind').innerText = `${w.wind_speed_ms} m/s`;
+                document.getElementById('w-dir').innerText = `${w.wind_direction_deg}°`;
+                document.getElementById('w-temp').innerText = `${w.temperature_c}°C`;
+            })
+            .catch(() => {});
+        }
+        refreshWeatherForLocation(chargingStation.lat, chargingStation.lng);
+
+        function restoreServerState() {
+            fetch('/api/get-active-mission', { headers: { 'Authorization': AUTH_HEADER } })
+            .then(res => res.json())
+            .then(mission => {
+                if (mission && mission.dock_station) {
+                    const dLat = mission.dock_station.lat;
+                    const dLon = mission.dock_station.lon || mission.dock_station.lng;
+                    chargingStation = { lat: dLat, lng: dLon };
+                    baseMarker.setLatLng([dLat, dLon]);
+
+                    if (mission.raw_polygon && mission.raw_polygon.length >= 3) {
+                        selectedPolygon = mission.raw_polygon.map(pt => ({ lat: pt[0], lng: pt[1] }));
+                        if (lastPolygonLayer) map.removeLayer(lastPolygonLayer);
+                        lastPolygonLayer = L.polygon(mission.raw_polygon, {
+                            color: '#1a73e8', fillColor: '#1a73e8', fillOpacity: 0.15, weight: 2
+                        }).addTo(map);
+                        document.getElementById('ready-indicator').classList.add('ready');
+                    }
+                }
+            })
+            .catch(() => {});
+        }
+        restoreServerState();
+
+        setInterval(() => {
+            fetch('/api/drone-telemetry', { headers: { 'Authorization': AUTH_HEADER } })
+            .then(res => res.json())
+            .then(d => {
+                if (!d || !d.lat) return;
+                liveDroneMarker.setLatLng([d.lat, d.lon]);
+                const svg = document.getElementById('drone-graphic');
+                if (svg) svg.style.transform = `rotate(${d.yaw}deg)`;
+            })
+            .catch(() => {});
+        }, 200);
+
+        function submitMission() {
+            if (!selectedPolygon || selectedPolygon.length < 3) {
+                alert("Please draw a survey area on the map first.");
+                return;
+            }
+
+            let areaM2 = 0;
+            const n = selectedPolygon.length;
+            for (let i = 0; i < n; i++) {
+                const j = (i + 1) % n;
+                const xi = selectedPolygon[i].lng * (Math.PI / 180) * 6378137 * Math.cos(selectedPolygon[i].lat * Math.PI / 180);
+                const yi = selectedPolygon[i].lat * (Math.PI / 180) * 6378137;
+                const xj = selectedPolygon[j].lng * (Math.PI / 180) * 6378137 * Math.cos(selectedPolygon[j].lat * Math.PI / 180);
+                const yj = selectedPolygon[j].lat * (Math.PI / 180) * 6378137;
+                areaM2 += (xi * yj - xj * yi);
+            }
+            areaM2 = Math.abs(areaM2 / 2.0);
+            const hectares = (areaM2 / 10000).toFixed(1);
+
+            if (areaM2 > 350000) {
+                alert(
+                    "❌ MISSION NOT FEASIBLE: AREA TOO LARGE!\n\n" +
+                    "• Selected area: " + hectares + " hectares\n" +
+                    "• Maximum drone capacity: 35.0 hectares\n\n" +
+                    "The area exceeds battery endurance capacity.\n" +
+                    "Please reduce the polygon size."
+                );
+                return;
+            }
+
+            const chosenMode = document.getElementById('mission-mode').value;
+
+            fetch('/api/set-mission', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': AUTH_HEADER
+                },
+                body: JSON.stringify({
+                    polygon: selectedPolygon,
+                    dock_station: chargingStation,
+                    mode: chosenMode
+                })
+            })
+            .then(async res => {
+                const data = await res.json();
+                
+                if (!res.ok || (data.feasibility && !data.feasibility.is_feasible)) {
+                    const f = data.feasibility || {};
+                    alert(
+                        "❌ MISSION REJECTED: INSUFFICIENT BATTERY RANGE!\n\n" +
+                        "• Estimated distance: " + (f.total_distance_km || "Too long") + " km\n" +
+                        "• Required battery: " + (f.battery_cost_percent || "> 70") + " %\n" +
+                        "• Mandatory safety reserve: 30 %\n\n" +
+                        "Please redraw a smaller polygon."
+                    );
+                    return;
+                }
+
+                window.location.href = '/track.html';
+            })
+            .catch(err => alert("Server error: " + err));
+        }
+    </script>
+</body>
+</html>
